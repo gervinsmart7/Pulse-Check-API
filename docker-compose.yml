@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: pulse-check-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pulsecheck
+      POSTGRES_PASSWORD: pulsecheck
+      POSTGRES_DB: pulsecheck
+    ports:
+      - "5433:5432"
+    volumes:
+      - pulse_check_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulsecheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pulse_check_pgdata:
