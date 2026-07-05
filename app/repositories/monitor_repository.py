@@ -76,7 +76,6 @@ class MonitorRepository:
 
     def list_all_events(
         self,
-        device_id: Optional[str] = None,
         event_type: Optional[EventType] = None,
         limit: int = 100,
         offset: int = 0,
@@ -89,8 +88,6 @@ class MonitorRepository:
             .join(Monitor, MonitorEvent.monitor_id == Monitor.id)
             .order_by(MonitorEvent.created_at.desc())
         )
-        if device_id is not None:
-            stmt = stmt.where(Monitor.device_id == device_id)
         if event_type is not None:
             stmt = stmt.where(MonitorEvent.event_type == event_type)
         stmt = stmt.limit(limit).offset(offset)

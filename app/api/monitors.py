@@ -89,20 +89,18 @@ def delete_monitor(device_id: str, db: Session = Depends(get_db)):
 
 @router.get("/events/all", response_model=list[GlobalMonitorEventResponse])
 def get_all_events(
-    device_id: str | None = None,
     event_type: EventType | None = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
     """Global audit log across every monitor. Optional filters:
-    - device_id: only events for one specific device
     - event_type: only events of one type (e.g. ALERT_TRIGGERED)
     - limit/offset: pagination (default 100 most recent events)
     """
     service = MonitorService(db)
     results = service.list_all_events(
-        device_id=device_id, event_type=event_type, limit=limit, offset=offset
+        event_type=event_type, limit=limit, offset=offset
     )
     return [
         GlobalMonitorEventResponse(

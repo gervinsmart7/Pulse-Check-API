@@ -142,7 +142,6 @@ class MonitorService:
 
     def list_all_events(
         self,
-        device_id: str | None = None,
         event_type: EventType | None = None,
         limit: int = 100,
         offset: int = 0,
@@ -151,7 +150,7 @@ class MonitorService:
         who want to search/browse the whole audit trail, not just one
         device's history."""
         return self.repo.list_all_events(
-            device_id=device_id, event_type=event_type, limit=limit, offset=offset
+            event_type=event_type, limit=limit, offset=offset
         )
 
     def purge_expired_deleted_monitors(self, retention_period_days: int) -> list[str]:
