@@ -112,3 +112,16 @@ def get_all_events(
         )
         for event, dev_id in results
     ]
+
+
+@router.post("/{device_id}/restore", response_model=MonitorResponse)
+def restore_monitor(device_id: str, db: Session = Depends(get_db)):
+    """Reverses a soft delete, bringing the monitor back into normal use.
+    404 if the device doesn't exist, was never deleted, or has already
+    been permanently purged past its retention period."""
+    service = MonitorService(db)
+    try:
+        monitor = service.restore(device_id)
+    except MonitorNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return MonitorResponse.model_validate(monitor)

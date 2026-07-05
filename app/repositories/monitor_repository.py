@@ -55,6 +55,10 @@ class MonitorRepository:
         monitor.is_deleted = True
         monitor.deleted_at = deleted_at
 
+    def restore(self, monitor: Monitor) -> None:
+        monitor.is_deleted = False
+        monitor.deleted_at = None
+
     def hard_delete(self, monitor: Monitor) -> None:
         self.db.delete(monitor)
 

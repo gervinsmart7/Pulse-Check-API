@@ -26,6 +26,7 @@ class EventType(str, enum.Enum):
     PAUSED = "PAUSED"
     RESUMED = "RESUMED"
     DELETED = "DELETED"
+    RESTORED = "RESTORED"
 
 
 class Monitor(Base):

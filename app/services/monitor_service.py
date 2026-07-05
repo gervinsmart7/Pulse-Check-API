@@ -122,6 +122,27 @@ class MonitorService:
         )
         self.repo.commit()
 
+    def restore(self, device_id: str) -> Monitor:
+        """Reverses a soft delete. Only works for monitors that are actually
+        soft-deleted and haven't yet been permanently purged (once the
+        retention period expires and the purge job runs, the row is gone
+        for real -- there is nothing left to restore)."""
+        monitor = self.repo.get_by_device_id(device_id, include_deleted=True)
+        if monitor is None:
+            raise MonitorNotFoundError(f"Monitor '{device_id}' not found")
+        if not monitor.is_deleted:
+            raise MonitorNotFoundError(
+                f"Monitor '{device_id}' is not deleted, nothing to restore"
+            )
+
+        self.repo.restore(monitor)
+        self.repo.add_event(
+            monitor.id, EventType.RESTORED, f"Monitor '{device_id}' restored from deletion"
+        )
+        self.repo.commit()
+        self.repo.refresh(monitor)
+        return monitor
+
     # -- Called by the scheduler, not the API layer -----------------------
 
     def mark_down_if_expired(self, monitor: Monitor) -> bool:

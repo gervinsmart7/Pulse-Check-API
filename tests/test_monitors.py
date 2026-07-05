@@ -123,3 +123,27 @@ def test_list_and_delete_monitor(client):
     del_resp = client.delete("/monitors/device-123")
     assert del_resp.status_code == 204
     assert client.get("/monitors/device-123").status_code == 404
+
+
+def test_restore_reverses_soft_delete(client):
+    register(client, device_id="restore-test")
+    client.delete("/monitors/restore-test")
+
+    assert client.get("/monitors/restore-test").status_code == 404
+
+    restore_resp = client.post("/monitors/restore-test/restore")
+    assert restore_resp.status_code == 200
+    assert restore_resp.json()["status"] == "ACTIVE"
+
+    get_resp = client.get("/monitors/restore-test")
+    assert get_resp.status_code == 200
+
+    history = client.get("/monitors/restore-test/history").json()
+    event_types = [e["event_type"] for e in history]
+    assert event_types == ["MONITOR_CREATED", "DELETED", "RESTORED"]
+
+
+def test_restore_non_deleted_monitor_returns_404(client):
+    register(client, device_id="never-deleted")
+    resp = client.post("/monitors/never-deleted/restore")
+    assert resp.status_code == 404
