@@ -20,7 +20,7 @@ and Postgres.
 ### How It Works
 
 Each monitor is a row in Postgres with a `timeout` and a `last_heartbeat`
-timestamp — there's no in-memory countdown or per-monitor timer object. A
+timestamp there's no in-memory countdown or per-monitor timer object. A
 background scheduler (APScheduler) ticks once a second, loads every `ACTIVE`
 monitor, and computes elapsed time as `now - last_heartbeat`. Any monitor
 where that elapsed time exceeds its `timeout` is transitioned to `DOWN` and
@@ -221,7 +221,7 @@ excluding soft-deleted monitors.
 
 ### Single-Device History
 GET /monitors/{id}/history
-Returns every event ever recorded for one device, oldest first — including
+Returns every event ever recorded for one device, oldest first including
 events from before a soft delete, since history outlives deletion until the
 retention period expires.
 
@@ -259,7 +259,7 @@ Returns events across **every** monitor, newest first, each tagged with its
 
 ### Delete Monitor
 DELETE /monitors/{id}
-Response `204 No Content`. This is a **soft delete** — see Developer's
+Response `204 No Content`. This is a **soft delete** see Developer's
 Choice below.
 
 ### Error Responses
