@@ -81,7 +81,7 @@ sudo apt install -y python3 python3-pip python3-venv python3-dev \
 ### Local Development
 
 ```bash
-git clone <your-fork-url>
+git clone https://github.com/gervinsmart7/Pulse-Check-API
 cd Pulse-Check-API
 docker compose up -d          # starts Postgres
 python3 -m venv venv
