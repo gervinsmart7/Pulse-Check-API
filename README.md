@@ -1,135 +1,336 @@
-# Pulse-Check-API ("Watchdog" Sentinel)
-This challenge is designed to test your ability to bridge Computer Science fundamentals with Modern Backend Engineering.
+# Pulse Check API
 
-## 1. Business Context
-> **Client:** *CritMon Servers Inc.* (A Critical Infrastructure Monitoring Company).
-
-### The Problem
-CritMon provides monitoring for remote solar farms and unmanned weather stations in areas with poor connectivity. These devices are supposed to send "I'm alive" signals every hour.
-
-Currently, CritMon has no way of knowing if a device has gone offline (due to power failure or theft) until a human manually checks the logs. They need a system that alerts *them* when a device *stops* talking.
-
-### The Solution
-You need to build a **Dead Man’s Switch API**. Devices will register a "monitor" with a countdown timer (e.g., 60 seconds). If the device fails to "ping" (send a heartbeat) to the API before the timer runs out, the system automatically triggers an alert.
+A Dead Man's Switch API for CritMon Servers Inc. Devices register a monitor
+with a timeout. If the device fails to send a heartbeat before the timer
+expires, the system marks it down and fires an alert. Built with FastAPI
+and Postgres.
 
 ---
 
-## 2. Technical Objective
-Build a backend service that manages stateful timers.
+## Architecture
 
-* **Registration:** Allow a client to create a monitor with a specific timeout duration.
-* **Heartbeat:** Reset the countdown when a ping is received.
-* **Trigger:** Fire a webhook (or log a critical error) if the countdown reaches zero.
+### Sequence Diagram
 
+![Sequence Diagram](docs/sequence_diagram.png)
 
----
+### State Flowchart
 
-## 3. Getting Started
+![State Flowchart](docs/flowchart.png)
 
-1.  **Fork this Repository:** Do not clone it directly. Create a fork to your own GitHub account.
-2.  **Environment:** You may use **Node.js, Python, Java or Go, etc.**.
-3.  **Submission:** Your final submission will be a link to your forked repository containing:
-    * The source code.
-    * The **Architecture Diagram**
-    * The `README.md` with documentation.
+### How It Works
 
----
+Each monitor is a row in Postgres with a `timeout` and a `last_heartbeat`
+timestamp — there's no in-memory countdown or per-monitor timer object. A
+background scheduler (APScheduler) ticks once a second, loads every `ACTIVE`
+monitor, and computes elapsed time as `now - last_heartbeat`. Any monitor
+where that elapsed time exceeds its `timeout` is transitioned to `DOWN` and
+an alert is logged, in the same pass.
 
-## 4. The Architecture Diagram 
-**Task:** Before you write any code, you must design the logic flow.
-**Deliverable:** A **Sequence Diagram** or **State Flowchart** embedded in your `README.md`.
+Because state lives in the database rather than in memory, there's nothing
+to rebuild on restart — the next scheduler tick after startup immediately
+re-evaluates every monitor against its real `last_heartbeat`, so a restart
+can never "lose" a countdown or delay detection of a monitor that expired
+while the process was down.
 
----
+Paused and deleted monitors are excluded from the scheduler's query
+entirely, so they incur zero timeout-checking overhead. A heartbeat on a
+paused monitor resumes it to `ACTIVE`. A heartbeat on a `DOWN` monitor also
+returns it directly to `ACTIVE` — recovery is immediate, not staged (see
+Developer's Choice below for why a **reversible delete**, not a graduated
+recovery state, was the extension chosen for this project).
 
-## 5. User Stories & Acceptance Criteria
+### Live URL
 
-### User Story 1: Registering a Monitor
-**As a** device administrator,  
-**I want to** create a new monitor for my device,  
-**So that** the system knows to track its status.
+https://pulse-check-api-xcng.onrender.com
 
-**Acceptance Criteria:**
-- [ ] The API accepts a `POST /monitors` request.
-- [ ] Input: `{"id": "device-123", "timeout": 60, "alert_email": "admin@critmon.com"}`.
-- [ ] The system starts a countdown timer for 60 seconds associated with `device-123`.
-- [ ] Response: `201 Created` with a confirmation message.
+Interactive API docs (test every endpoint from the browser):
+https://pulse-check-api-xcng.onrender.com/docs
 
-### User Story 2: The Heartbeat (Reset)
-**As a** remote device,  
-**I want to** send a signal to the server,  
-**So that** my timer is reset and no alert is sent.
-
-**Acceptance Criteria:**
-- [ ] The API accepts a `POST /monitors/{id}/heartbeat` request.
-- [ ] If the ID exists and the timer has NOT expired:
-    - [ ] Restart the countdown from the beginning (e.g., reset to 60 seconds).
-    - [ ] Return `200 OK`.
-- [ ] If the ID does not exist:
-    - [ ] Return `404 Not Found`.
-
-### User Story 3: The Alert (Failure State)
-**As a** support engineer,  
-**I want to** be notified immediately if a device stops sending heartbeats,  
-**So that** I can deploy a repair team.
-
-**Acceptance Criteria:**
-- [ ] If the timer for `device-123` reaches 0 seconds (no heartbeat received):
-    - [ ] The system must internally "fire" an alert.
-    - [ ] **Implementation:** For this project, simply `console.log` a JSON object: `{"ALERT": "Device device-123 is down!", "time": <timestamp>}`. (Or simulate sending an email).
-    - [ ] The monitor status changes to `down`.
+> Runs on Render's free tier, which sleeps after 15 minutes of inactivity.
+> The first request after idling may take up to a minute to wake it back up.
 
 ---
 
-## 6. Bonus User Story (The "Snooze" Button)
-**As a** maintenance technician,  
-**I want to** pause monitoring while I am repairing a device,  
-**So that** I don't trigger false alarms.
+## Stack
 
-**Acceptance Criteria:**
-- [ ] Create a `POST /monitors/{id}/pause` endpoint.
-- [ ] When called, the timer stops completely. No alerts will fire.
-- [ ] Calling the heartbeat endpoint again automatically "un-pauses" the monitor and restarts the timer.
-
----
-
-## 7. The "Developer's Choice" Challenge
-We value engineers who look for "what's missing."
-
-**Task:** Identify **one** additional feature that makes this system more robust or user-friendly.
-1.  **Implement it.**
-2.  **Document it:** Explain *why* you added it in your README.
+- **Language:** Python 3.12
+- **Framework:** FastAPI
+- **Server:** Uvicorn
+- **Database:** PostgreSQL via SQLAlchemy
+- **Migrations:** Alembic
+- **Scheduler:** APScheduler
+- **Validation:** Pydantic
+- **Deployment:** Docker on Render
 
 ---
 
-## 8. Documentation Requirements
-Your final `README.md` must replace these instructions. It must cover:
+## Setup
 
-1.  **Architecture Diagram** 
-2.  **Setup Instructions** 
-3.  **API Documentation** 
-4.  **The Developer's Choice:** Explanation of your added feature.
+### Prerequisites
+
+- Python 3.11+
+- Docker + Docker Compose
+- `libpq-dev`, `python3-dev`, `build-essential` (for building `psycopg2-binary`)
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv python3-dev \
+    build-essential libpq-dev git curl unzip
+```
+
+### Local Development
+
+```bash
+git clone <your-fork-url>
+cd Pulse-Check-API
+docker compose up -d          # starts Postgres
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+alembic upgrade head
+uvicorn main:app --reload --port 8000
+```
+
+### Docker (app + migrations in one container)
+
+```bash
+docker build -t pulse-check-api .
+docker run --rm --network host \
+  -e DATABASE_URL="postgresql+psycopg2://pulsecheck:pulsecheck@localhost:5433/pulsecheck" \
+  -e PORT=8080 \
+  pulse-check-api
+```
+
+Migrations run automatically on container startup via `entrypoint.sh`
+before Uvicorn starts.
 
 ---
-Submit your repo link via the [online](https://forms.office.com/e/rGKtfeZCsH) form.
 
-## 🛑 Pre-Submission Checklist
-**WARNING:** Before you submit your solution, you **MUST** pass every item on this list.
-If you miss any of these critical steps, your submission will be **automatically rejected** and you will **NOT** be invited to an interview.
+## Environment Variables
 
-### 1. 📂 Repository & Code
-- [ ] **Public Access:** Is your GitHub repository set to **Public**? (We cannot review private repos).
-- [ ] **Clean Code:** Did you remove unnecessary files (like `node_modules`, `.env` with real keys, or `.DS_Store`)?
-- [ ] **Run Check:** if we clone your repo and run `npm start` (or equivalent), does the server start immediately without crashing?
-
-### 2. 📄 Documentation (Crucial)
-- [ ] **Architecture Diagram:** Did you include a visual Diagram (Flowchart or Sequence Diagram) in the README?
-- [ ] **README Swap:** Did you **DELETE** the original instructions (the problem brief) from this file and replace it with your own documentation?
-- [ ] **API Docs:** Is there a clear list of Endpoints and Example Requests in the README?
-
-
-### 3. 🧹 Git Hygiene
-- [ ] **Commit History:** Does your repo have multiple commits with meaningful messages? (A single "Initial Commit" is a red flag).
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `DATABASE_URL` | Yes | - | Postgres connection string |
+| `SCHEDULER_INTERVAL_SECONDS` | No | `1` | How often the timeout-check job runs |
+| `PORT` | No | `8080` (Docker) / `8000` (local) | Port the server listens on |
 
 ---
-**Ready?**
-If you checked all the boxes above, submit your repository link in the application form. Good luck! 🚀
+
+## API
+
+### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/monitors` | Register a monitor |
+| `POST` | `/monitors/{id}/heartbeat` | Send a heartbeat |
+| `POST` | `/monitors/{id}/pause` | Pause a monitor |
+| `POST` | `/monitors/{id}/restore` | Reverse a soft delete |
+| `GET` | `/monitors/{id}` | Get monitor state |
+| `GET` | `/monitors` | List all active monitors |
+| `GET` | `/monitors/{id}/history` | Full audit trail for one device |
+| `GET` | `/monitors/events/all` | Global audit log across all monitors |
+| `DELETE` | `/monitors/{id}` | Soft-delete a monitor |
+
+### Register a Monitor
+
+```
+POST /monitors
+```
+
+```json
+{
+  "id": "device-123",
+  "timeout": 60,
+  "alert_email": "admin@critmon.com"
+}
+```
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `id` | string | Yes | 1-255 chars |
+| `timeout` | int | Yes | > 0 seconds |
+| `alert_email` | string | Yes | Valid email format |
+
+Response `201 Created`:
+
+```json
+{
+  "message": "Monitor 'device-123' registered successfully",
+  "monitor": {
+    "id": "device-123",
+    "timeout": 60,
+    "alert_email": "admin@critmon.com",
+    "status": "ACTIVE",
+    "last_heartbeat": "2026-07-05T12:00:00Z",
+    "created_at": "2026-07-05T12:00:00Z",
+    "updated_at": "2026-07-05T12:00:00Z"
+  }
+}
+```
+
+`409 Conflict` if `id` already exists.
+
+### Heartbeat
+POST /monitors/{id}/heartbeat
+Response `200 OK`: the updated monitor object. Behavior depends on prior state:
+
+| Prior state | Result |
+|---|---|
+| `ACTIVE` | Timer resets, stays `ACTIVE` |
+| `PAUSED` | Auto-resumes to `ACTIVE` |
+| `DOWN` | Recovers to `ACTIVE` |
+
+`404 Not Found` if the device doesn't exist or has been deleted.
+
+### Pause
+POST /monitors/{id}/pause
+Response `200 OK` with the updated monitor, now `PAUSED`. No timeout checks
+occur while paused. Calling heartbeat on a paused monitor resumes it.
+
+### Restore
+POST /monitors/{id}/restore
+Response `200 OK` with the monitor restored to normal use, exact same
+registration data intact.
+
+`404 Not Found` if the device never existed, was never deleted, or was
+soft-deleted long enough ago to have already been permanently purged (see
+retention policy below).
+
+### Get Specific Monitors
+GET /monitors/{id}
+Response `200 OK`:
+
+```json
+{
+  "id": "device-123",
+  "timeout": 60,
+  "alert_email": "admin@critmon.com",
+  "status": "ACTIVE",
+  "last_heartbeat": "2026-07-05T12:00:00Z",
+  "created_at": "2026-07-05T12:00:00Z",
+  "updated_at": "2026-07-05T12:00:00Z"
+}
+```
+
+### List Monitors
+GET /monitors
+Response `200 OK`: an array of monitor objects (same shape as above),
+excluding soft-deleted monitors.
+
+### Single-Device History
+GET /monitors/{id}/history
+Returns every event ever recorded for one device, oldest first — including
+events from before a soft delete, since history outlives deletion until the
+retention period expires.
+
+```json
+[
+  {"event_type": "MONITOR_CREATED", "message": "...", "created_at": "..."},
+  {"event_type": "HEARTBEAT_RECEIVED", "message": "...", "created_at": "..."},
+  {"event_type": "DELETED", "message": "...", "created_at": "..."},
+  {"event_type": "RESTORED", "message": "...", "created_at": "..."}
+]
+```
+
+### Global Event Log
+GET /monitors/events/all
+| Query param | Required | Default | Description |
+|---|---|---|---|
+| `event_type` | No | - | Filter to one event type, e.g. `ALERT_TRIGGERED` |
+| `limit` | No | `100` | Max results |
+| `offset` | No | `0` | Pagination offset |
+
+Returns events across **every** monitor, newest first, each tagged with its
+`device_id`:
+
+```json
+[
+  {
+    "id": "72d65171-...",
+    "device_id": "device-123",
+    "event_type": "ALERT_TRIGGERED",
+    "message": "Device 'device-123' missed its 60s heartbeat window",
+    "created_at": "2026-07-05T21:36:04Z"
+  }
+]
+```
+
+### Delete Monitor
+DELETE /monitors/{id}
+Response `204 No Content`. This is a **soft delete** — see Developer's
+Choice below.
+
+### Error Responses
+
+```json
+{
+  "detail": "Monitor 'device-123' not found"
+}
+```
+
+| Status | Meaning |
+|---|---|
+| `400` | Invalid request body |
+| `404` | Monitor not found |
+| `409` | Duplicate device on registration |
+| `500` | Internal server error |
+
+---
+
+## Developer's Choice: Reversible, Auditable, Retention-Bound Deletion
+
+The base spec treats deletion as final: a monitor is either registered or
+gone. In practice, mistakes happen — an admin deletes the wrong device ID,
+or a device is decommissioned and later needs its incident history pulled
+for a compliance review months afterward. A hard, irreversible delete
+destroys exactly the information needed in both situations, at exactly the
+moment it can no longer be recovered.
+
+This is the same problem systems like Gmail's Trash, Google Drive's "Recently
+deleted," and most database-backed SaaS products solve with soft delete: an
+item marked deleted is hidden from normal use immediately, but not actually
+destroyed until a retention window passes. The same principle applies here.
+
+The design adds three things on top of the base spec:
+
+**Soft delete:** `DELETE /monitors/{id}` sets `is_deleted = true` and
+`deleted_at = now()` rather than removing the row. The monitor disappears
+from `GET /monitors` and can no longer receive heartbeats or pauses, but
+its row and every one of its `monitor_events` remain physically in the
+database.
+
+**Restore:** `POST /monitors/{id}/restore` reverses this — clears
+`is_deleted`/`deleted_at` and logs a `RESTORED` event — bringing the
+monitor back to normal use with its original data and full history intact,
+undoing an accidental deletion cleanly.
+
+**Retention purge:** a background job runs every 24 hours and permanently
+deletes any monitor that has been soft-deleted for more than 6 months,
+cascading to its events. This bounds database growth without requiring a
+human to remember to clean up old records, while still guaranteeing a
+generous recovery/audit window before anything is actually destroyed.
+
+State transitions this adds on top of the base spec:
+active/down/paused + delete            -> soft-deleted (history preserved)
+soft-deleted        + restore           -> prior active use resumes
+soft-deleted        + 6 months elapse   -> permanently purged (irreversible)
+This gives CritMon a system where deletion is a safety-netted action rather
+than a one-way door, and where the audit trail a support engineer needs
+during an incident review can't accidentally be destroyed by the same
+action that decommissions a device.
+
+---
+
+## Running Tests
+
+```bash
+pytest -v
+```
+
+Runs against an isolated in-memory SQLite database — no Docker or Postgres
+required. Covers the full lifecycle: registration, duplicate detection,
+heartbeat (including `DOWN → ACTIVE` recovery), pause/resume, timeout-
+triggered alerts, full audit history, soft delete, restore (including the
+guardrail against restoring a non-deleted monitor), and listing.
