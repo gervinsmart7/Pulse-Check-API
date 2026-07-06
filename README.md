@@ -279,7 +279,7 @@ Choice below.
 
 ---
 
-## Developer's Choice: Reversible, Auditable, Retention-Bound Deletion
+## Developer's Choice: Delete, Restore deleted, Auditable, Retention-Bound Deletion
 
 The base spec treats deletion as final: a monitor is either registered or
 gone. In practice, mistakes happen — an admin deletes the wrong device ID,
