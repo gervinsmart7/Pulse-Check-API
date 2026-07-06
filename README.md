@@ -27,7 +27,7 @@ where that elapsed time exceeds its `timeout` is transitioned to `DOWN` and
 an alert is logged, in the same pass.
 
 Because state lives in the database rather than in memory, there's nothing
-to rebuild on restart — the next scheduler tick after startup immediately
+to rebuild on restart the next scheduler tick after startup immediately
 re-evaluates every monitor against its real `last_heartbeat`, so a restart
 can never "lose" a countdown or delay detection of a monitor that expired
 while the process was down.
@@ -35,7 +35,7 @@ while the process was down.
 Paused and deleted monitors are excluded from the scheduler's query
 entirely, so they incur zero timeout-checking overhead. A heartbeat on a
 paused monitor resumes it to `ACTIVE`. A heartbeat on a `DOWN` monitor also
-returns it directly to `ACTIVE` — recovery is immediate, not staged (see
+returns it directly to `ACTIVE` recovery is immediate, not staged (see
 Developer's Choice below for why a **reversible delete**, not a graduated
 recovery state, was the extension chosen for this project).
 
@@ -282,7 +282,7 @@ Choice below.
 ## Developer's Choice: Delete, Restore deleted, Auditable, Retention-Bound Deletion
 
 The base spec treats deletion as final: a monitor is either registered or
-gone. In practice, mistakes happen — an admin deletes the wrong device ID,
+gone. In practice, mistakes happen an admin deletes the wrong device ID,
 or a device is decommissioned and later needs its incident history pulled
 for a compliance review months afterward. A hard, irreversible delete
 destroys exactly the information needed in both situations, at exactly the
@@ -301,8 +301,8 @@ from `GET /monitors` and can no longer receive heartbeats or pauses, but
 its row and every one of its `monitor_events` remain physically in the
 database.
 
-**Restore:** `POST /monitors/{id}/restore` reverses this — clears
-`is_deleted`/`deleted_at` and logs a `RESTORED` event — bringing the
+**Restore:** `POST /monitors/{id}/restore` reverses this clears
+`is_deleted`/`deleted_at` and logs a `RESTORED` event bringing the
 monitor back to normal use with its original data and full history intact,
 undoing an accidental deletion cleanly.
 
